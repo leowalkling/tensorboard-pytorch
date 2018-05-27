@@ -30,7 +30,7 @@ from .pytorch_graph import graph
 from .proto import event_pb2
 from .proto import summary_pb2
 from .proto import graph_pb2
-from .summary import scalar, histogram, image, audio, text, pr_curve, pr_curve_raw, video, custom_scalars
+from .summary import scalar, histogram, image, encoded_image, audio, text, pr_curve, pr_curve_raw, video, custom_scalars
 from .utils import figure_to_image
 from tensorboardX.proto.event_pb2 import SessionLog
 from tensorboardX.proto.event_pb2 import Event
@@ -455,6 +455,25 @@ class SummaryWriter(object):
         """
         self.add_image(tag, figure_to_image(
             figure, close), global_step, walltime)
+
+    def add_encoded_image(self, tag, image_data, width, height, channels, global_step=None, walltime=None):
+        """Add encoded image data to summary.
+
+        Note that this requires the ``pillow`` package.
+
+        Args:
+            tag (string): Data identifier
+            image_data (bytes): Binary string of the encoded image
+            width (int)
+            height (int)
+            channels (int)
+            global_step (int): Global step value to record
+            walltime (float): Optional override default walltime (time.time()) of event
+        Shape:
+            img_tensor: :math:`(3, H, W)`. Use ``torchvision.utils.make_grid()`` to prepare it is a good idea.
+        """
+        self.file_writer.add_summary(encoded_image(tag, image_data, width, height, channels),
+                                     global_step, walltime)
 
     def add_video(self, tag, vid_tensor, global_step=None, fps=4, walltime=None):
         """Add video data to summary.

@@ -40,7 +40,7 @@ import os
 import re as _re
 
 # pylint: disable=unused-import
-from six import StringIO
+from six import StringIO, BytesIO
 from six.moves import range
 from .proto.summary_pb2 import Summary
 from .proto.summary_pb2 import HistogramProto
@@ -202,13 +202,25 @@ def image(tag, tensor, rescale=1):
       buffer.
     """
     tag = _clean_tag(tag)
-    tensor = make_np(tensor, 'IMG')
-    # Do not assume that user passes in values in [0, 255], use data type to detect
-    scale_factor = _calc_scale_factor(tensor)
-    tensor = tensor.astype(np.float32)
-    tensor = (tensor * scale_factor).astype(np.uint8)
-    image = make_image(tensor, rescale=rescale)
+    from PIL import Image
+    if isinstance(tensor, Image.Image):
+        pass
+    else:
+        tensor = make_np(tensor, 'IMG')
+        # Do not assume that user passes in values in [0, 255], use data type to detect
+        scale_factor = _calc_scale_factor(tensor)
+        tensor = tensor.astype(np.float32)
+        tensor = (tensor * scale_factor).astype(np.uint8)
+        image = make_image(tensor, rescale=rescale)
     return Summary(value=[Summary.Value(tag=tag, image=image)])
+
+
+def encoded_image(tag, data, width, height, channels):
+    return Summary(value=[Summary.Value(tag=tag,
+                                        image=Summary.Image(height=height,
+                                                            width=width,
+                                                            colorspace=channels,
+                                                            encoded_image_string=data))])
 
 
 def image_boxes(tag, tensor_image, tensor_boxes, rescale=1):
@@ -243,18 +255,21 @@ def draw_boxes(disp_image, gt_boxes):
 def make_image(tensor, rescale=1, rois=None):
     """Convert an numpy representation image to Image protobuf"""
     from PIL import Image
-    height, width, channel = tensor.shape
+    if isinstance(tensor, Image.Image):
+        image = tensor
+        height, width = image.size
+        channel = len(image.getbands())
+    else:
+        height, width, channel = tensor.shape
+        image = Image.fromarray(tensor)
     scaled_height = int(height * rescale)
     scaled_width = int(width * rescale)
-    image = Image.fromarray(tensor)
     if rois is not None:
         image = draw_boxes(image, rois)
     image = image.resize((scaled_width, scaled_height), Image.ANTIALIAS)
-    import io
-    output = io.BytesIO()
-    image.save(output, format='PNG')
-    image_string = output.getvalue()
-    output.close()
+    with BytesIO() as output:
+        image.save(output, format='PNG')
+        image_string = output.getvalue()
     return Summary.Image(height=height,
                          width=width,
                          colorspace=channel,
