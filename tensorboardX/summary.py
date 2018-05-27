@@ -36,7 +36,7 @@ from __future__ import print_function
 import logging
 import re as _re
 import bisect
-from six import StringIO
+from six import StringIO, BytesIO
 from six.moves import range
 import numpy as np
 # pylint: disable=unused-import
@@ -165,9 +165,13 @@ def image(tag, tensor):
       buffer.
     """
     tag = _clean_tag(tag)
-    tensor = makenp(tensor, 'IMG')
-    tensor = tensor.astype(np.float32)
-    tensor = (tensor * 255).astype(np.uint8)
+    from PIL import Image
+    if isinstance(tensor, Image.Image):
+        pass
+    else:
+        tensor = makenp(tensor, 'IMG')
+        tensor = tensor.astype(np.float32)
+        tensor = (tensor * 255).astype(np.uint8)
     image = make_image(tensor)
     return Summary(value=[Summary.Value(tag=tag, image=image)])
 
@@ -175,13 +179,16 @@ def image(tag, tensor):
 def make_image(tensor):
     """Convert an numpy representation image to Image protobuf"""
     from PIL import Image
-    height, width, channel = tensor.shape
-    image = Image.fromarray(tensor)
-    import io
-    output = io.BytesIO()
-    image.save(output, format='PNG')
-    image_string = output.getvalue()
-    output.close()
+    if isinstance(tensor, Image.Image):
+        image = tensor
+        height, width = image.size
+        channel = len(image.getbands())
+    else:
+        height, width, channel = tensor.shape
+        image = Image.fromarray(tensor)
+    with BytesIO() as output:
+        image.save(output, format='PNG')
+        image_string = output.getvalue()
     return Summary.Image(height=height,
                          width=width,
                          colorspace=channel,
