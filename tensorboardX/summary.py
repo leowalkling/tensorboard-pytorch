@@ -176,6 +176,14 @@ def image(tag, tensor):
     return Summary(value=[Summary.Value(tag=tag, image=image)])
 
 
+def encoded_image(tag, data, width, height, channels):
+    return Summary(value=[Summary.Value(tag=tag,
+                                        image=Summary.Image(height=height,
+                                                            width=width,
+                                                            colorspace=channels,
+                                                            encoded_image_string=data))])
+
+
 def make_image(tensor):
     """Convert an numpy representation image to Image protobuf"""
     from PIL import Image

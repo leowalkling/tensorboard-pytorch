@@ -25,7 +25,7 @@ from .src import event_pb2
 from .src import summary_pb2
 from .src import graph_pb2
 from .event_file_writer import EventFileWriter
-from .summary import scalar, histogram, image, audio, text, pr_curve, pr_curve_raw, video
+from .summary import scalar, histogram, image, encoded_image, audio, text, pr_curve, pr_curve_raw, video
 from .graph import graph
 from .graph_onnx import gg
 from .embedding import make_mat, make_sprite, make_tsv, append_pbtxt
@@ -349,6 +349,24 @@ class SummaryWriter(object):
             img_tensor: :math:`(3, H, W)`. Use ``torchvision.utils.make_grid()`` to prepare it is a good idea.
         """
         self.file_writer.add_summary(image(tag, img_tensor), global_step)
+
+    def add_encoded_image(self, tag, image_data, width, height, channels, global_step=None):
+        """Add encoded image data to summary.
+
+        Note that this requires the ``pillow`` package.
+
+        Args:
+            tag (string): Data identifier
+            image_data (bytes): Binary string of the encoded image
+            width (int)
+            height (int)
+            channels (int)
+            global_step (int): Global step value to record
+        Shape:
+            img_tensor: :math:`(3, H, W)`. Use ``torchvision.utils.make_grid()`` to prepare it is a good idea.
+        """
+        self.file_writer.add_summary(encoded_image(tag, image_data, width, height, channels),
+                                     global_step)
 
     def add_video(self, tag, vid_tensor, global_step=None, fps=4):
         """Add video data to summary.
