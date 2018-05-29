@@ -38,7 +38,7 @@ from .pytorch_graph import graph
 from .src import event_pb2
 from .src import summary_pb2
 from .src import graph_pb2
-from .summary import scalar, histogram, image, audio, text, pr_curve, pr_curve_raw, video
+from .summary import scalar, histogram, image, encoded_image, audio, text, pr_curve, pr_curve_raw, video
 from .utils import figure_to_image
 from tensorboardX.src.event_pb2 import SessionLog
 from tensorboardX.src.event_pb2 import Event
@@ -423,6 +423,37 @@ class SummaryWriter(object):
         if self._check_caffe2(box_tensor):
             box_tensor = workspace.FetchBlob(box_tensor)
         self._file_writer.add_summary(image_boxes(tag, img_tensor, box_tensor, **kwargs), global_step)
+
+    def add_figure(self, tag, figure, global_step=None, close=True):
+        """Render matplotlib figure into an image and add it to summary.
+
+        Note that this requires the ``matplotlib`` package.
+
+        Args:
+            tag (string): Data identifier
+            figure (matplotlib.pyplot.figure) or list of figures: figure or a list of figures
+            global_step (int): Global step value to record
+            close (bool): Flag to automatically close the figure
+        """
+        self.add_image(tag, figure_to_image(figure, close), global_step)
+
+    def add_encoded_image(self, tag, image_data, width, height, channels, global_step=None):
+        """Add encoded image data to summary.
+
+        Note that this requires the ``pillow`` package.
+
+        Args:
+            tag (string): Data identifier
+            image_data (bytes): Binary string of the encoded image
+            width (int)
+            height (int)
+            channels (int)
+            global_step (int): Global step value to record
+        Shape:
+            img_tensor: :math:`(3, H, W)`. Use ``torchvision.utils.make_grid()`` to prepare it is a good idea.
+        """
+        self.file_writer.add_summary(encoded_image(tag, image_data, width, height, channels),
+                                     global_step)
 
     def add_figure(self, tag, figure, global_step=None, close=True):
         """Render matplotlib figure into an image and add it to summary.

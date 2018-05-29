@@ -210,6 +210,14 @@ def image(tag, tensor, rescale=1):
     return Summary(value=[Summary.Value(tag=tag, image=image)])
 
 
+def encoded_image(tag, data, width, height, channels):
+    return Summary(value=[Summary.Value(tag=tag,
+                                        image=Summary.Image(height=height,
+                                                            width=width,
+                                                            colorspace=channels,
+                                                            encoded_image_string=data))])
+
+
 def image_boxes(tag, tensor_image, tensor_boxes, rescale=1):
     '''Outputs a `Summary` protocol buffer with images.'''
     tensor_image = make_np(tensor_image, 'IMG')
@@ -253,11 +261,9 @@ def make_image(tensor, rescale=1, rois=None):
     if rois is not None:
         image = draw_boxes(image, rois)
     image = image.resize((scaled_width, scaled_height), Image.ANTIALIAS)
-    import io
-    output = io.BytesIO()
-    image.save(output, format='PNG')
-    image_string = output.getvalue()
-    output.close()
+    with BytesIO() as output:
+        image.save(output, format='PNG')
+        image_string = output.getvalue()
     return Summary.Image(height=height,
                          width=width,
                          colorspace=channel,
