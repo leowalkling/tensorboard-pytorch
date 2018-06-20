@@ -25,6 +25,7 @@ import threading
 import time
 
 import six
+from six.moves.queue import Queue, Empty
 
 from .src import event_pb2
 from .record_writer import RecordWriter
@@ -86,6 +87,10 @@ class EventsWriter(object):
         return return_value
 
 
+class RequestStop(object):
+    pass
+
+
 class EventFileWriter(object):
     """Writes `Event` protocol buffers to an event file.
     The `EventFileWriter` class creates an event file in the specified directory,
@@ -116,7 +121,7 @@ class EventFileWriter(object):
         """
         self._logdir = logdir
         directory_check(self._logdir)
-        self._event_queue = six.moves.queue.Queue(max_queue)
+        self._event_queue = Queue(max_queue)
         self._ev_writer = EventsWriter(os.path.join(self._logdir, "events"))
         self._closed = False
         self._worker = _EventLoggerThread(self._event_queue, self._ev_writer,
@@ -135,6 +140,7 @@ class EventFileWriter(object):
         Does nothing if the EventFileWriter was not closed.
         """
         if self._closed:
+            self._worker.start()
             self._closed = False
 
     def add_event(self, event):
@@ -160,6 +166,8 @@ class EventFileWriter(object):
         self.flush()
         self._ev_writer.close()
         self._closed = True
+        self._worker.request_stop()
+        self._worker.join()
 
 
 class _EventLoggerThread(threading.Thread):
@@ -181,17 +189,25 @@ class _EventLoggerThread(threading.Thread):
         self._flush_secs = flush_secs
         # The first event will be flushed immediately.
         self._next_event_flush_time = 0
+        self._stop_event = threading.Event()
+
+    def request_stop(self):
+        self._stop_event.set()
 
     def run(self):
-        while True:
-            event = self._queue.get()
+        while not self._stop_event.is_set():
             try:
-                self._ev_writer.write_event(event)
-                # Flush the event writer every so often.
-                now = time.time()
-                if now > self._next_event_flush_time:
-                    self._ev_writer.flush()
-                    # Do it again in two minutes.
-                    self._next_event_flush_time = now + self._flush_secs
-            finally:
-                self._queue.task_done()
+                event = self._queue.get(timeout=0.3)
+
+                try:
+                    self._ev_writer.write_event(event)
+                    # Flush the event writer every so often.
+                    now = time.time()
+                    if now > self._next_event_flush_time:
+                        self._ev_writer.flush()
+                        # Do it again in two minutes.
+                        self._next_event_flush_time = now + self._flush_secs
+                finally:
+                    self._queue.task_done()
+            except Empty:
+                pass
