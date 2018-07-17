@@ -153,9 +153,10 @@ class FileWriter(SummaryToEventTransformer):
     def __init__(self,
                  logdir,
                  graph=None,
-                 max_queue=10,
-                 flush_secs=120,
-                 graph_def=None):
+                 max_queue=None,
+                 flush_secs=None,
+                 graph_def=None,
+                 worker=None,):
         """Creates a `FileWriter` and an event file.
         On construction the summary writer creates a new event file in `logdir`.
         This event file will contain `Event` protocol buffers constructed when you
@@ -187,7 +188,7 @@ class FileWriter(SummaryToEventTransformer):
             pending events and summaries to disk.
           graph_def: DEPRECATED: Use the `graph` argument instead.
         """
-        event_writer = EventFileWriter(logdir, max_queue, flush_secs)
+        event_writer = EventFileWriter(logdir, max_queue, flush_secs, worker)
         super(FileWriter, self).__init__(event_writer, graph, graph_def)
 
     def get_logdir(self):
@@ -231,7 +232,7 @@ class SummaryWriter(object):
     to add data to the file directly from the training loop, without slowing down
     training.
     """
-    def __init__(self, log_dir=None, comment='', **kwargs):
+    def __init__(self, log_dir=None, comment='', worker=None, **kwargs):
         """
         Args:
             log_dir (string): save location, default is: runs/**CURRENT_DATETIME_HOSTNAME**, which changes after each
@@ -246,7 +247,7 @@ class SummaryWriter(object):
             from datetime import datetime
             current_time = datetime.now().strftime('%b%d_%H-%M-%S')
             log_dir = os.path.join('runs', current_time + '_' + socket.gethostname() + comment)
-        self.file_writer = FileWriter(logdir=log_dir, **kwargs)
+        self.file_writer = FileWriter(logdir=log_dir, worker=worker, **kwargs)
         v = 1E-12
         buckets = []
         neg_buckets = []
