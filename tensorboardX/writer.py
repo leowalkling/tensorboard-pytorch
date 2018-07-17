@@ -166,9 +166,10 @@ class FileWriter(SummaryToEventTransformer):
     def __init__(self,
                  logdir,
                  graph=None,
-                 max_queue=10,
-                 flush_secs=120,
-                 graph_def=None):
+                 max_queue=None,
+                 flush_secs=None,
+                 graph_def=None,
+                 worker=None,):
         """Creates a `FileWriter` and an event file.
         On construction the summary writer creates a new event file in `logdir`.
         This event file will contain `Event` protocol buffers constructed when you
@@ -200,7 +201,7 @@ class FileWriter(SummaryToEventTransformer):
             pending events and summaries to disk.
           graph_def: DEPRECATED: Use the `graph` argument instead.
         """
-        event_writer = EventFileWriter(logdir, max_queue, flush_secs)
+        event_writer = EventFileWriter(logdir, max_queue, flush_secs, worker)
         super(FileWriter, self).__init__(event_writer, graph, graph_def)
 
     def get_logdir(self):
@@ -244,17 +245,12 @@ class SummaryWriter(object):
     to add data to the file directly from the training loop, without slowing down
     training.
     """
-    def __init__(self, log_dir=None, comment='', **kwargs):
+    def __init__(self, log_dir=None, comment='', worker=None, **kwargs):
         """
         Args:
             log_dir (string): save location, default is: runs/**CURRENT_DATETIME_HOSTNAME**, which changes after each
               run. Use hierarchical folder structure to compare between runs easily. e.g. 'runs/exp1', 'runs/exp2'
-            comment (string): comment that appends to the default ``log_dir``. If ``log_dir`` is assigned,
-              this argument will no effect.
-            purge_step (int):
-              When logging crashes at step :math:`T+X` and restarts at step :math:`T`, any events
-              whose global_step larger or euqal to :math:`T` will be purged and hiding from TensorBoard.
-              Note that the resumed experiment and the crashed experiment should have the same ``log_dir``.
+            comment (string): comment that appends to the default log_dir
             kwargs: extra keyword arguments for FileWriter (e.g. 'flush_secs'
               controls how often to flush pending events). For more arguments
               please refer to docs for 'tf.summary.FileWriter'.
@@ -273,7 +269,7 @@ class SummaryWriter(object):
             self.file_writer.add_event(Event(step=most_recent_step, file_version='brain.Event:2'))
             self.file_writer.add_event(Event(step=most_recent_step, session_log=SessionLog(status=SessionLog.START)))
         else:
-            self.file_writer = FileWriter(logdir=log_dir, **kwargs)
+            self.file_writer = FileWriter(logdir=log_dir, worker=worker, **kwargs)
 
         # Create default bins for histograms, see generate_testdata.py in tensorflow/tensorboard
         v = 1E-12
@@ -423,19 +419,6 @@ class SummaryWriter(object):
         if self._check_caffe2(box_tensor):
             box_tensor = workspace.FetchBlob(box_tensor)
         self._file_writer.add_summary(image_boxes(tag, img_tensor, box_tensor, **kwargs), global_step)
-
-    def add_figure(self, tag, figure, global_step=None, close=True):
-        """Render matplotlib figure into an image and add it to summary.
-
-        Note that this requires the ``matplotlib`` package.
-
-        Args:
-            tag (string): Data identifier
-            figure (matplotlib.pyplot.figure) or list of figures: figure or a list of figures
-            global_step (int): Global step value to record
-            close (bool): Flag to automatically close the figure
-        """
-        self.add_image(tag, figure_to_image(figure, close), global_step)
 
     def add_encoded_image(self, tag, image_data, width, height, channels, global_step=None):
         """Add encoded image data to summary.

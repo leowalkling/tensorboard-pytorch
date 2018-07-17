@@ -23,6 +23,7 @@ import os.path
 import socket
 import threading
 import time
+from time import perf_counter
 
 import six
 from six.moves.queue import Queue, Empty
@@ -102,7 +103,7 @@ class EventFileWriter(object):
     @@close
     """
 
-    def __init__(self, logdir, max_queue=10, flush_secs=120):
+    def __init__(self, logdir, max_queue=None, flush_secs=None, worker=None):
         """Creates a `EventFileWriter` and an event file to write to.
         On construction the summary writer creates a new event file in `logdir`.
         This event file will contain `Event` protocol buffers, which are written to
@@ -119,15 +120,24 @@ class EventFileWriter(object):
           flush_secs: Number. How often, in seconds, to flush the
             pending events and summaries to disk.
         """
+
         self._logdir = logdir
         directory_check(self._logdir)
-        self._event_queue = Queue(max_queue)
         self._ev_writer = EventsWriter(os.path.join(self._logdir, "events"))
         self._closed = False
-        self._worker = _EventLoggerThread(self._event_queue, self._ev_writer,
-                                          flush_secs)
 
-        self._worker.start()
+        if worker is not None:
+            if max_queue is not None:
+                raise ValueError("cannot specify max_queue when giving an existing event logger thread")
+            if flush_secs is not None:
+                raise ValueError("cannot specify flush_secs when giving an existing event logger thread")
+            self._worker_owned = False
+            self._worker = worker
+        else:
+            self._worker_owned = True
+            self._worker = EventLoggerThread(max_queue or 30,
+                                             flush_secs or 120)
+            self._worker.start()
 
     def get_logdir(self):
         """Returns the directory where event file will be written."""
@@ -140,7 +150,8 @@ class EventFileWriter(object):
         Does nothing if the EventFileWriter was not closed.
         """
         if self._closed:
-            self._worker.start()
+            if self._worker_owned:
+                self._worker.start()
             self._closed = False
 
     def add_event(self, event):
@@ -149,65 +160,117 @@ class EventFileWriter(object):
           event: An `Event` protocol buffer.
         """
         if not self._closed:
-            self._event_queue.put(event)
+            self._worker.add_event(self._ev_writer, event)
 
     def flush(self):
         """Flushes the event file to disk.
         Call this method to make sure that all pending events have been written to
         disk.
         """
-        self._event_queue.join()
-        self._ev_writer.flush()
+        if self._worker_owned:
+            self._worker.request_stop()
+            self._worker.join()
+            worker = EventLoggerThread(self._event_queue.maxsize, self._worker._flush_secs)
+            worker.queue = self._worker.queue
+            self._worker = worker
+            self._worker.start()
 
     def close(self):
         """Flushes the event file to disk and close the file.
         Call this method when you do not need the summary writer anymore.
         """
-        self.flush()
-        self._ev_writer.close()
+        self._worker.close_event_writer(self._ev_writer)
+        if self._worker_owned:
+            self._worker.request_stop()
+            self._worker.join()
         self._closed = True
-        self._worker.request_stop()
-        self._worker.join()
 
 
-class _EventLoggerThread(threading.Thread):
+class CloseEventWriter(object):
+    __slots__ = "writer"
+    def __init__(self, writer):
+        self.writer = writer
+
+
+class Flush(object):
+    __slots__ = "writer", "event"
+
+    def __init__(self, writer, event):
+        self.writer = writer
+        self.event = event
+
+
+class EventLoggerThread(threading.Thread):
     """Thread that logs events."""
 
-    def __init__(self, queue, ev_writer, flush_secs):
-        """Creates an _EventLoggerThread.
+    def __init__(self, max_queue=30, flush_secs=120):
+        """Creates an EventLoggerThread.
         Args:
           queue: A Queue from which to dequeue events.
-          ev_writer: An event writer. Used to log brain events for
-           the visualizer.
           flush_secs: How often, in seconds, to flush the
             pending file to disk.
         """
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self, daemon=True)
         self.daemon = True
-        self._queue = queue
-        self._ev_writer = ev_writer
+        self.queue = Queue(max_queue)
         self._flush_secs = flush_secs
         # The first event will be flushed immediately.
-        self._next_event_flush_time = 0
-        self._stop_event = threading.Event()
+        self._next_event_flush_time = perf_counter()
+        self._cancel_event = threading.Event()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.request_stop()
+        self.join()
+
+    def close(self):
+        return self.__exit__(None, None, None)
 
     def request_stop(self):
-        self._stop_event.set()
+        self.queue.put(RequestStop())
+
+    def close_event_writer(self, event_writer):
+        self.queue.put(CloseEventWriter(event_writer))
+
+    def cancel_loop(self):
+        self._cancel_event.set()
+
+    def wait_for_queued_events(self):
+        self.queue.join()
+
+    def add_event(self, ev_writer, event):
+        self.queue.put((ev_writer, event))
 
     def run(self):
-        while not self._stop_event.is_set():
+        cancel_event = self._cancel_event
+        while not cancel_event.is_set():
             try:
-                event = self._queue.get(timeout=0.3)
+                msg = self.queue.get(timeout=0.3)
 
                 try:
-                    self._ev_writer.write_event(event)
-                    # Flush the event writer every so often.
-                    now = time.time()
-                    if now > self._next_event_flush_time:
-                        self._ev_writer.flush()
+                    if isinstance(msg, tuple):
+                        ev_writer, event = msg
+                        ev_writer.write_event(event)
+                        # Flush the event writer every so often.
+                        now = perf_counter()
+                        if now > self._next_event_flush_time:
+                            ev_writer.flush()
+                            # Do it again in two minutes.
+                            self._next_event_flush_time = now + self._flush_secs
+                    elif isinstance(msg, CloseEventWriter):
+                        ev_writer = msg.writer
+                        ev_writer.close()
+                    elif isinstance(msg, Flush):
+                        ev_writer = msg.writer
+                        event = msg.event
+                        ev_writer.flush()
                         # Do it again in two minutes.
                         self._next_event_flush_time = now + self._flush_secs
+                    elif isinstance(msg, RequestStop):
+                        cancel_event.set()
                 finally:
-                    self._queue.task_done()
+                    self.queue.task_done()
             except Empty:
                 pass
