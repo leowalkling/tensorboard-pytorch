@@ -170,7 +170,7 @@ class EventFileWriter(object):
         if self._worker_owned:
             self._worker.request_stop()
             self._worker.join()
-            worker = EventLoggerThread(self._event_queue.maxsize, self._worker._flush_secs)
+            worker = EventLoggerThread(self._worker.queue.maxsize, self._worker._flush_secs)
             worker.queue = self._worker.queue
             self._worker = worker
             self._worker.start()
