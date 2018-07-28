@@ -13,13 +13,13 @@ _VALID_OP_NAME_PART = re.compile('[A-Za-z0-9_.\\-/]+')
 
 
 class RecordWriter(object):
-    def __init__(self, path, flush_secs=2):
+    def __init__(self, path, flush_secs=2, mode="ab"):
         self._name_to_tf_name = {}
         self._tf_names = set()
         self.path = path
         self.flush_secs = flush_secs  # TODO. flush every flush_secs, not every time.
         self._writer = None
-        self._writer = open(path, 'wb')
+        self._writer = open(path, mode)
 
     def write(self, event_str):
         w = self._writer.write
