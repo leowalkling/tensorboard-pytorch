@@ -147,28 +147,25 @@ def histogram(name, values, bins, collections=None):
 
 def make_histogram(values, bins):
     """Convert values into a histogram proto using logic from histogram.cc."""
-    if values.size == 0:
-        raise ValueError('The input has no element.')
     values = values.reshape(-1)
     counts, limits = np.histogram(values, bins=bins)
     limits = limits[1:]
     # void Histogram::EncodeToProto in histogram.cc
+    num_bins = len(counts)
+    start = num_bins
     for i, c in enumerate(counts):
         if c > 0:
             start = max(0, i - 1)
             break
 
+    end = 0
     for i, c in enumerate(reversed(counts)):
         if c > 0:
-            end = counts.size - i
+            end = num_bins - i
             break
 
     counts = counts[start:end]
     limits = limits[start:end]
-
-    if counts.size == 0 or limits.size == 0:
-        raise ValueError('The histogram is emtpy, please file a bug report.')
-
     sum_sq = values.dot(values)
     return HistogramProto(min=values.min(),
                           max=values.max(),
