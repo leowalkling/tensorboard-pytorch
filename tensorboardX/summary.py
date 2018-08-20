@@ -149,14 +149,17 @@ def make_histogram(values, bins):
     counts, limits = np.histogram(values, bins=bins)
     limits = limits[1:]
     # void Histogram::EncodeToProto in histogram.cc
+    num_bins = len(counts)
+    start = num_bins
     for i, c in enumerate(counts):
         if c > 0:
             start = max(0, i - 1)
             break
 
+    end = 0
     for i, c in enumerate(reversed(counts)):
         if c > 0:
-            end = -(i)
+            end = -i
             break
 
     counts = counts[start:end]
