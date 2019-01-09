@@ -166,6 +166,14 @@ def make_histogram(values, bins, max_bins=2**15):
         new_limits[-1] = limits[-1]
         limits = new_limits
 
+    # Avoid protobuf decoding error for float values with exponent above 37:
+    start, end = np.searchsorted(limits, [-1e37, 1e37], side="left")
+    counts = counts[start:end]
+    if len(counts) == 0:
+        return HistogramProto(min=0.0, max=0.0, num=1, sum=0.0, sum_squares=0.0,
+                              bucket_limit=[-1e-3, 1e-3], bucket=[0, 0])
+    limits = limits[start:end + 1]
+
     # Find the first and the last bin defining the support of the histogram:
     cum_counts = np.cumsum(np.greater(counts, 0, dtype=np.int32))
     start, end = np.searchsorted(cum_counts, [0, cum_counts[-1] - 1], side="right")
