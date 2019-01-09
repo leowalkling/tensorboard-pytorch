@@ -105,14 +105,14 @@ register_writer_factory("s3", S3RecordWriterFactory())
 
 
 class RecordWriter(object):
-    def __init__(self, path, flush_secs=2):
+    def __init__(self, path, flush_secs=2, mode="ab"):
         self._name_to_tf_name = {}
         self._tf_names = set()
         self.path = path
         # TODO. flush every flush_secs, not every time.
         self.flush_secs = flush_secs
         self._writer = None
-        self._writer = open_file(path)
+        self._writer = open_file(path, mode)
 
     def write(self, event_str):
         w = self._writer.write

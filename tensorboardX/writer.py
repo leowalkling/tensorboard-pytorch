@@ -165,7 +165,8 @@ class FileWriter(SummaryToEventTransformer):
                  max_queue=10,
                  flush_secs=120,
                  filename_suffix='',
-                 graph_def=None):
+                 graph_def=None,
+                 worker=None):
         """Creates a `FileWriter` and an event file.
         On construction the summary writer creates a new event file in `logdir`.
         This event file will contain `Event` protocol buffers constructed when you
@@ -198,7 +199,7 @@ class FileWriter(SummaryToEventTransformer):
           graph_def: DEPRECATED: Use the `graph` argument instead.
         """
         event_writer = EventFileWriter(
-            logdir, max_queue, flush_secs, filename_suffix)
+            logdir, max_queue, flush_secs, filename_suffix, worker)
         super(FileWriter, self).__init__(event_writer, graph, graph_def)
 
     def get_logdir(self):
@@ -270,13 +271,15 @@ class SummaryWriter(object):
 
         if 'purge_step' in kwargs.keys():
             most_recent_step = kwargs.pop('purge_step')
-            self.file_writer = FileWriter(logdir=log_dir, **kwargs)
+            self._writer_arguments = writer_args = kwargs
+            self.file_writer = FileWriter(logdir=log_dir, **writer_args)
             self.file_writer.add_event(
                 Event(step=most_recent_step, file_version='brain.Event:2'))
             self.file_writer.add_event(
                 Event(step=most_recent_step, session_log=SessionLog(status=SessionLog.START)))
         else:
-            self.file_writer = FileWriter(logdir=log_dir, **kwargs)
+            self._writer_arguments = writer_args = kwargs
+            self.file_writer = FileWriter(logdir=log_dir, **writer_args)
 
         # Create default bins for histograms, see generate_testdata.py in tensorflow/tensorboard
         v = 1E-12
@@ -362,12 +365,13 @@ class SummaryWriter(object):
         """
         walltime = time.time() if walltime is None else walltime
         fw_logdir = self.file_writer.get_logdir()
+        writer_args = self._writer_arguments
         for tag, scalar_value in tag_scalar_dict.items():
             fw_tag = fw_logdir + "/" + main_tag + "/" + tag
             if fw_tag in self.all_writers.keys():
                 fw = self.all_writers[fw_tag]
             else:
-                fw = FileWriter(logdir=fw_tag)
+                fw = FileWriter(logdir=fw_tag, **writer_args)
                 self.all_writers[fw_tag] = fw
             if self._check_caffe2(scalar_value):
                 scalar_value = workspace.FetchBlob(scalar_value)
